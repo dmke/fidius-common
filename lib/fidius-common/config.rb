@@ -1,9 +1,9 @@
 require 'yaml'
+require 'pp'
 require 'rbconfig'
 require 'highline'
 
 # virtual boolean class. may create unforseen side effects (think of marshalling)
-# XXX: request feedback
 class Boolean
   self.private_class_method :new, :allocate
   def self.inherited(subclass)
@@ -20,7 +20,7 @@ class Boolean
 end
 
 module FIDIUS
-  module Config
+  module Configurator
 
     class << self
       def included(mod)
@@ -34,84 +34,77 @@ module FIDIUS
       end
 
       def config_file_name basename
+        postfix = 'config', "#{basename}.yml"
         if RbConfig::CONFIG['host_os'] =~ /mswin|windows|cygwin/i
-          File.join(ENV['APPDATA'], 'FIDIUS', "#{basename}.yml")
+          File.join(ENV['APPDATA'], 'FIDIUS', *postfix)
         else
-          File.join(ENV['HOME'], '.fidius', "#{basename}.yml")
+          File.join(ENV['HOME'], '.fidius', *postfix)
         end
       end
+      
+      def new(*args)
+        return FIDIUS::Configurator::Configuration.new(*args)
+      end
     end
-
-    class ConfigItem < Struct.new(:type, :question, :default, :validation)
-      def get_from_user
-        # highline
+    
+    class ConfigItem < Struct.new(:type, :default, :question, :choices, :proc)
+      def inspect
+        "<##{self.class}: `#{question}` (#{type}) #{default}:#{choices}>"
+      end
+      
+      def pretty_print(pp)
+        pp.text inspect
       end
     end
 
-    class Config
+    class Configuration
       include Enumerable
 
       attr_accessor :baseclass, :write_immediately
+      attr_reader   :to_hash, :options
 
       def initialize
         @options = {}
-        @hsh = {}
+        @to_hash = {}
         @read = false
-        @write_immediately = true
+        write_immediately = true
       end
 
-      def new(key, args)
-        p args
-        if args.kind_of? Hash
-          options = new_from_hash(args)
-        elsif args.kind_of? Array
-          @options[key.to_s] = new_from_array(args)
-        else
-          new(key, [args])
-        end
-
-        if choices && default && !default.kind_of?(type)
-          raise TypeError, "guess what? `#{default.inspect}' is not a #{type}"
-        elsif default && !default.kind_of?(type)
-          raise TypeError, "guess what? `#{default.inspect}' is not a #{type}"
-        end
-        @options[key] = ConfigItem.new(type, question, default)
+      def add(hash)
+        @options = items_from_hash(hash)
       end
 
       def [](key)
         read_config_file unless @read
-        @hsh[key.to_s]
+        to_hash[key.to_s]
       end
 
       def []=(key, value)
-        @hsh[key.to_s] = value
+        @to_hash[key.to_s] = value
         save if write_immediately
+        value
       end
 
       def load
-        @hsh = YAML.load_file FIDIUS::Config.config_file_name(file_basename)
+        @to_hash = YAML.load_file FIDIUS::Configurator.config_file_name(file_basename)
         @read = true
       rescue Errno::ENOENT
         generate_config_file
       end
 
       def save
-        File.open(FIDIUS::Config.config_file_name(file_basename), 'w') {|f|
-          f.write @hsh.to_yaml
+        File.open(FIDIUS::Configurator.config_file_name(file_basename), 'w') {|f|
+          f.write to_hash.to_yaml
         }
       end
-
-      def to_hash
-        @hsh
-      end
-
+      
       def inspect
-        "<##{self.class} for #{baseclass}: #{@hsh.inspect}>"
+        "<##{self.class} for #{baseclass}: #{to_hash.inspect}>"
       end
 
     private
 
-      def new_from_array(args)
+      def items_from_array(args)
         default, proc = nil, nil
         type, question, *default_or_proc = *args
 
@@ -122,6 +115,9 @@ module FIDIUS
         when Range
           choices = type
           type = type.first.class
+        when TrueClass, FalseClass
+          default = type
+          type = Boolean
         when Class
           # everything's fine
         else
@@ -129,9 +125,7 @@ module FIDIUS
           type = type.class
         end
 
-        unless question
-          question = "#{baseclass} requests a #{type}"
-        end
+        question = "#{baseclass} requests a #{type}" unless question
 
         case default_or_proc.size
         when 0
@@ -146,10 +140,23 @@ module FIDIUS
           default = default_or_proc[0]
           proc = default_or_proc[1]
         end
+        
+        ConfigItem.new(type, default, question, choices, proc)
       end
 
-      def new_from_hash(args)
-
+      def items_from_hash(hash)
+        options = {}
+        hash.each_pair {|key,args|
+          key = key.to_s
+          if args.kind_of?(Array)
+            options[key] = items_from_array(args)
+          elsif args.kind_of?(Hash)
+            options[key] = items_from_hash(args)
+          else
+            options[key] = items_from_array([args])
+          end
+        }
+        options
       end
 
       def file_basename
@@ -157,9 +164,9 @@ module FIDIUS
       end
 
       def generate_config_file
-        puts "FIDIUS::Config missing for #{baseclass}. Creating new one..."
+        puts "Configuration missing for #{baseclass}. Creating new one..."
         @options.each_pair {|key,config_item|
-          # highline
+          pp config_item
         }
         puts "...done."
       end
@@ -168,12 +175,10 @@ module FIDIUS
 
     module ConfigMethods
       def config
-        @config ||= FIDIUS::Config::Config.new
+        @config ||= FIDIUS::Configurator::Configuration.new
       end
-      def build_config(hsh)
-        hsh.each_pair {|key,args| # FIXME: do it recursive
-          config.new(key, args)
-        }
+      def configure(config_hash)
+        config.add(config_hash)
         config.load
       end
     end #module ConfigMethods
@@ -192,8 +197,8 @@ end # module FIDIUS
 if $0 == __FILE__
   module FIDIUS::Foo
     class Bar
-      include FIDIUS::Config
-      build_config(
+      include FIDIUS::Configurator
+      configure(
         # the key will be converted to string.
         # types of values:
         :aval => [Integer],
