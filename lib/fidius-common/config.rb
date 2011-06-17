@@ -1,7 +1,7 @@
 require 'yaml'
 require 'pp'
 require 'rbconfig'
-require 'highline'
+require 'highline/import'
 
 # virtual boolean class. may create unforseen side effects (think of marshalling)
 class Boolean
@@ -105,8 +105,9 @@ module FIDIUS
     private
 
       def items_from_array(args)
-        default, proc = nil, nil
-        type, question, *default_or_proc = *args
+        p args
+        default, proc, choices = nil, nil, nil
+        type, question, *default_or_choices_or_proc = *args
 
         case type
         when Array
@@ -124,23 +125,37 @@ module FIDIUS
           default = type
           type = type.class
         end
-
         question = "#{baseclass} requests a #{type}" unless question
-
-        case default_or_proc.size
-        when 0
-          default ||= nil
-        when 1
-          if default_or_proc.kind_of?(Proc)
-            proc = default_or_proc[0]
-          else
-            default = default_or_proc[0]
-          end
-        when 2
-          default = default_or_proc[0]
-          proc = default_or_proc[1]
-        end
+        question = "#{question}  "
         
+        default_or_choices_or_proc.each {|dcp|
+          if dcp.kind_of?(Proc)
+            proc ||= dcp
+          elsif dcp.kind_of?(Array) || dcp.kind_of?(Range)
+            choices ||= dcp
+          else
+            default ||= dcp
+          end
+        }
+#        case default_or_choices_or_proc.size
+#        when 0
+#          default ||= nil
+#          choices ||= nil
+#          proc ||= nil
+#        when 1
+#          dcp = default_or_choices_or_proc
+#          if dcp[0].kind_of?(Proc)
+#            proc = dcp[0]
+#          elsif dcp[0].kind_of?(Array) || dcp[0].kind_of?(Range)
+#            choices = dcp[0]
+#          else
+#            default = dcp[0]
+#          end          
+#        when 2
+#          default = dcp[0]
+#          proc = dcp[1]
+#        when 3
+#        end
         ConfigItem.new(type, default, question, choices, proc)
       end
 
@@ -166,7 +181,19 @@ module FIDIUS
       def generate_config_file
         puts "Configuration missing for #{baseclass}. Creating new one..."
         @options.each_pair {|key,config_item|
-          pp config_item
+          #  ask(question, answer_type = String, &details)
+          if config_item.choices
+            choose() {|q|
+              q.prompt config_item.question
+              q.choices config_item.choices, &nil
+              q.validate = config_item.proc if config_item.proc
+            }
+          else
+            ask(config_item.question, config_item.type) {|q|
+              q.default  = config_item.default if config_item.default
+              q.validate = config_item.proc if config_item.proc
+            }
+          end
         }
         puts "...done."
       end
@@ -201,27 +228,29 @@ if $0 == __FILE__
       configure(
         # the key will be converted to string.
         # types of values:
-        :aval => [Integer],
-        :bval => [Integer, "a number"],
+#        :aval => [Integer],
+#        :bval => [Integer, "a number"],
         :cval => [Integer, "a number with default", 42],
         :dval => [Integer, "a number with choices", [21,23,42]],
         :eval => [Integer, "a number with range", (1...100)],
-        :fval => [Integer, "a number with validation but w/o default", Proc.new{|val| val.even? }],
-        :gval => [Integer, "a number with validation and default", 0, Proc.new{|val| val.zero? }],
+        :xval => [Integer, "a number with range", 23, [21,23,42]],
+        :yval => [Integer, "a number with range", 2, (1...100)]
+#        :fval => [Integer, "a number with validation but w/o default", Proc.new{|val| val.to_i.even? }],
+#        :gval => [Integer, "a number with validation and default", 0, Proc.new{|val| val.to_i.zero? }]#,
         # value nesting
-        :hval => {
-          :hvala => [String, "name a file", "~/.bashrc"],
-          :hvalb => [Boolean, "delete it?", true],
-          :hvalc => {
-            :hvalc1 => [Time, "using implicit conversation"]
-          }
-        },
-        # some useful shortcuts
-        :Cval  => [42,          "a number with default"], # identical to :cval
-        :Dval  => [[21,23,42],  "a number with choices"], # identical to :dval
-        :Eval  => [(1...100),   "a number with range"],   # do you see a pattern?
-        :Hvala => ["~/.bashrc", "name a file"],           # :
-        :Hvalb => [true,        "delete it?"]             # .
+#        :hval => {
+#          :hvala => [String, "name a file", "~/.bashrc"],
+#          :hvalb => [Boolean, "delete it?", true],
+#          :hvalc => {
+#            :hvalc1 => [Time, "using implicit conversation"]
+#          }
+#        },
+#        # some useful shortcuts
+#        :Cval  => [42,          "a number with default"], # identical to :cval
+#        :Dval  => [[21,23,42],  "a number with choices"], # identical to :dval
+#        :Eval  => [(1...100),   "a number with range"],   # do you see a pattern?
+#        :Hvala => ["~/.bashrc", "name a file"],           # :
+#        :Hvalb => [true,        "delete it?"]             # .
       )
     end
   end
