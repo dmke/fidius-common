@@ -183,9 +183,8 @@ module FIDIUS
         @options.each_pair {|key,config_item|
           #  ask(question, answer_type = String, &details)
           if config_item.choices
-            choose() {|q|
-              q.prompt config_item.question
-              q.choices config_item.choices, &nil
+            choose(*config_item.choices) {|q|
+              q.prompt   = config_item.question
               q.validate = config_item.proc if config_item.proc
             }
           else
