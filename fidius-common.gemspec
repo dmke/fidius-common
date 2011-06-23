@@ -22,6 +22,7 @@ Gem::Specification.new do |s|
   s.add_runtime_dependency 'activesupport', '>= 3.0.0'
   s.add_runtime_dependency 'activerecord', '>= 3.0.0'
   s.add_runtime_dependency 'sqlite3'
+  s.add_runtime_dependency 'highline'
 
   s.rdoc_options << '--title' << s.name <<
                     '--main'  << 'README.md' << '--show-hash' <<
