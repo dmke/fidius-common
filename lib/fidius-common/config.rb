@@ -202,7 +202,7 @@ module FIDIUS
       #   
       #   *Beware:* Any given config item without default value will be ignored.
       #
-      #   *TODO:* Not implemented yet.
+      # @todo The :assume_default option is not implemented yet.
       #
       # @return [Hash]  The current configuration.
       def options= opts={}
@@ -393,5 +393,13 @@ if $0 == __FILE__
       
       p config.hash
     end
+  end
+  
+  class Foo
+    include FIDIUS::Configurator
+    configure(
+      :host => ["localhost", "A hostname"],
+      :port => [(1..2**16),  "A port number"]
+    )
   end
 end
