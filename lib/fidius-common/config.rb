@@ -11,7 +11,7 @@ module FIDIUS
       # When +include+'ing the {Configurator} into another class or module,
       # that class or module will be extended with {ConfigMethods}.
       #
-      # @param [Class|Module] mod  The class or module to be extended by {ConfigMethods}.
+      # @param [Class,Module] mod  The class or module to be extended by {ConfigMethods}.
       # @param [void]
       def included(mod)
         mod.extend ConfigMethods
@@ -220,6 +220,15 @@ module FIDIUS
 
       # @group Private Instance Method Summary
 
+      # Reads an input array and converts it into a {ConfigItem}. The input Array should
+      # have one of the following form:
+      # 
+      #
+      # @overload items_from_array(klass, question, default_value, validation_proc)
+      # @overload items_from_array(klass, question, default_value)
+      # @overload items_form_array(default_value, question, validation_proc)
+      # @overload items_form_array(default_value, question)
+      # @return [ConfigItem]  The converted input values.
       def items_from_array(args)
         default, range, choices, proc = nil, nil, nil, nil
         type, question, *default_or_choices_or_proc = *args
@@ -258,7 +267,7 @@ module FIDIUS
           end
         }
         
-        proc = Proc.new {|val| range.include?(val.to_i) } if range && !proc
+        proc = lambda {|val| range.include?(val.to_i) } if range && !proc
 
         question = "#{baseclass} requests a #{type}" unless question
         question = "#{question} (#{range})" if range
