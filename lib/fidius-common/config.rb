@@ -223,15 +223,48 @@ module FIDIUS
       # Reads an input array and converts it into a {ConfigItem}. The input Array should
       # have one of the following form:
       # 
+      #   [Integer, "Please give me a number"]
+      #   [Integer, "Please give me a number, or hit enter and I'll take the default",                 42]
+      #   [Integer, "Please give me a number greater than 41",                                             lambda {|val| val.to_i > 41 }]
+      #   [Integer, "Please give me a number greater than 41, or hit enter and I'll take the default", 42, lambda {|val| val.to_i > 41 }]
       #
-      # @overload items_from_array(klass, question, default_value, validation_proc)
-      # @overload items_from_array(klass, question, default_value)
-      # @overload items_form_array(default_value, question, validation_proc)
-      # @overload items_form_array(default_value, question)
+      # If you want to provide a default value, you don't need to specify a
+      # class. Instead, the class +default_value.class+ will be used. Each pair
+      # of the following lines will produce the same behaviour:
+      # 
+      #   [42,      "THGTTG"]
+      #   [Integer, "THGTTG", 42]
+      #
+      #   [42,      "THGTTG",     lambda {|val| val.to_i == 42 }]
+      #   [Integer, "THGTTG", 42, lambda {|val| val.to_i == 42 }]
+      #
+      # Note, that instances of +Fixnum+/+Bignum+ classes are mapped automatically
+      # to +Integer+, so you do not need to worry about that.
+      #
+      # @param [String] question  This will be the user's prompt. If no value
+      #     is given, something like "Foo::Bar requests a String" will be
+      #     formed and used instead.
+      # @param [Class] klass  The user's input must match this class. Note,
+      #     that the user only capable to enter string values. To prompt 
+      #     arbritary types is likely going to fail. Nevertheless, the used
+      #     Highline gem is able to convert the input string to some basic
+      #     (core) classes, such as Date, DateTime, File, Float, Integer,
+      #     Pathname, Regexp, String, Symbol, and any class implementing a
+      #     +parse()+ method.
+      #
+      #     If +klass+ is an Array, the user will be prompted to choose one
+      #     of the elements. If +klass+ is a boolean type, the user has to
+      #     answer a yes-or-no-question.
+      # @param [Proc, Regexp] 
       # @return [ConfigItem]  The converted input values.
-      def items_from_array(args)
-        default, range, choices, proc = nil, nil, nil, nil
-        type, question, *default_or_choices_or_proc = *args
+      #
+      #
+      # @overload items_from_array(klass, question=nil, default_value=nil, validation=nil)
+      # @overload items_from_array(klass, question=nil, validation=nil)
+      # @overload items_from_array(default_value, question=nil, validation=nil)
+      def items_from_array(*args)
+        default, range, choices, validation = nil, nil, nil, nil
+        type, question, *default_or_choices_or_validation = args
 
         case type
         when Array
@@ -255,9 +288,9 @@ module FIDIUS
           type = type.class
         end
         
-        default_or_choices_or_proc.each {|dcp|
-          if dcp.kind_of?(Proc)
-            proc ||= dcp
+        default_or_choices_or_validation.each {|dcp|
+          if dcp.kind_of?(Proc) || dcp.kind_of?(Regexp)
+            validation ||= dcp
           elsif dcp.kind_of?(Array)
             choices ||= dcp
           elsif dcp.kind_of?(Range)
@@ -267,13 +300,13 @@ module FIDIUS
           end
         }
         
-        proc = lambda {|val| range.include?(val.to_i) } if range && !proc
+        validation = lambda {|val| range.include?(val.to_i) } if range && !validation
 
         question = "#{baseclass} requests a #{type}" unless question
         question = "#{question} (#{range})" if range
-        question = "#{question}  "
+        question = "#{question.strip}  "
 
-        ConfigItem.new(type, default, question, choices, proc)
+        ConfigItem.new(type, default, question, choices, validation)
       end
 
       def items_from_hash(hash)
@@ -281,18 +314,19 @@ module FIDIUS
         hash.each_pair {|key,args|
           key = key.to_s
           if args.kind_of?(Array)
-            options[key] = items_from_array(args)
+            options[key] = items_from_array(*args)
           elsif args.kind_of?(Hash)
             options[key] = items_from_hash(args)
           else
-            options[key] = items_from_array([args])
+            options[key] = items_from_array(args)
           end
         }
         options
       end
 
+      # Maps the base class' name to a file name.
       def file_basename
-        @file_basename ||= baseclass.to_s.gsub(/^FIDIUS::/, '').split('::').map(&:downcase).join('_')
+        @file_basename ||= baseclass.to_s.split('::').join('-')
       end
 
       def generate_config_file
